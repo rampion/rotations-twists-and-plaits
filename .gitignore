@@ -1,3 +1,5 @@
 # from `cabal sandbox init`
 .cabal-sandbox
 cabal.sandbox.config
+# from `cabal build`
+dist
