@@ -20,7 +20,7 @@ flag Development
   manual: True
 
 library
-  exposed-modules:     Braid
+  exposed-modules:     README
   -- other-modules:
   -- other-extensions:
   build-depends: base >=4.10 && <4.11
@@ -30,6 +30,7 @@ library
                , transformers
   -- hs-source-dirs:
   default-language:    Haskell2010
+  ghc-options:-pgmL markdown-unlit
   if flag(development)
     ghc-options: -Wall -Wextra -Werror
 
@@ -41,3 +42,17 @@ test-suite doctests
   default-language: Haskell2010
   if flag(development)
     ghc-options: -Wall -Wextra -Werror
+
+test-suite doctest-readme
+  type: exitcode-stdio-1.0
+  main-is: doctest-readme.hs
+  other-modules: README
+  build-depends: base
+               , doctest >=0.13 && <0.14
+               , markdown-unlit >= 0.4.0 && <0.5
+                 -- Control.Monad.State
+               , mtl
+                 -- Control.Applicative.Backwards
+               , transformers
+  default-language: Haskell2010
+  ghc-options:-pgmL markdown-unlit

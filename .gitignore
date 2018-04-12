@@ -3,3 +3,5 @@
 cabal.sandbox.config
 # from `cabal build`
 dist
+# from `make doc`
+README.html
