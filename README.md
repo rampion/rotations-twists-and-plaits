@@ -190,11 +190,13 @@ same is true for left rotations of lists, but not right rotations.
 ```
 <!--
 ```haskell
-
 -}
 ```
 -->
-
+```haskell ignore
+>>> take 10 $ rotateRightList [0..]
+<stack overflow>
+```
 Cycles of Traversables
 ======================
 
@@ -208,9 +210,9 @@ knot :: (s -> (a,s)) -> a
 knot f = a where (a,s) = f s
 
 -- |
--- hold a value to be used later
-hold :: a -> a -> (a, a)
-hold a a' = (a', a)
+-- swap a value with the current state
+swap :: a -> a -> (a, a)
+swap a a' = (a', a)
 
 -- |
 -- Move the last item in a traversable to the front, shifting all the other items one
@@ -222,7 +224,7 @@ hold a a' = (a', a)
 --     Pair [7,0,1,2] [3,4,5,6]
 --
 rotateRight :: Traversable t => t a -> t a
-rotateRight = knot . runState . traverse (state . hold)
+rotateRight = knot . runState . traverse (state . swap)
 
 -- |
 -- Move the first item in a traversable to the end, shifting all the other items one
@@ -233,7 +235,7 @@ rotateRight = knot . runState . traverse (state . hold)
 --     >>> rotateLeft (Pair [0..3] [4..7])
 --     Pair [1,2,3,4] [5,6,7,0]
 rotateLeft :: Traversable t => t a -> t a
-rotateLeft = knot . runState . forwards . traverse (Backwards . state . hold)
+rotateLeft = knot . runState . forwards . traverse (Backwards . state . swap)
 ```
 
 To examine behaviour of cycles in the presence of co-data, it's useful to have
@@ -307,10 +309,6 @@ We can rotate left-infinite streams to the right, and right-infinite streams to 
 … :< -4 :< -3 :< -2 :< -1
 >>> rotateRight negatives
 … :< -5 :< -4 :< -3 :< -2
-
-```
-
-```haskell
 >>> positives
 1 :> 2 :> 3 :> 4 :> …
 >>> rotateLeft positives
@@ -319,10 +317,19 @@ We can rotate left-infinite streams to the right, and right-infinite streams to 
 ```
 <!--
 ```haskell
-
 -}
 ```
 -->
+
+Rotating left-infinite streams to the left or right-infinite streams to the
+right blows up, predictably:
+
+```haskell ignore
+>>> rotateRight positives
+<stack overflow>
+>>> rotateLeft negatives
+<stack overflow>
+```
 
 Streams that extend infinitely in both directions or that have an infinite middle 
 can be rotated either way.
@@ -352,11 +359,128 @@ Pair (1.0 :> 0.0 :> 0.25 :> 0.375 :> …) (… :< 0.53125 :< 0.5625 :< 0.625 :< 
 
 ```
 <!--
-
 ```haskell
 -}
 ```
 -->
-So can we extend plaits similarly?  We'd expect plaits to behave well on 
-streams that extend in either or both directions, but not on streams with an
-infinite middle.
+
+So can we extend plaits similarly?  It's not hard to come up with an expected
+behaviour for plaits of streams that extend in either or both directions:
+
+```haskell ignore
+>>> plait positives
+2 :> 4 :> 1 :> 6 :> …
+>>> plait negatives
+… :< -6 :< -1 :< -4 :< -2
+>>> plait integers
+Pair (… :< -6 :< -1 :< -4 :< 1) (-2 :> 3 :> 0 :> 5 :> …)
+
+```
+
+However, ambiguity emerges when considering traversables with infinite middles.
+We don't know the **parity** of the second half with respect to the first.
+
+```haskell ignore
+-- if 0.0 moves two positions right, should 1.0 move left two positions...
+>>> plait limitHalf
+Pair (0.25 :> 0.4375 :> 0.0 :> 0.484375 :> …)
+     (… :< 0.515625 :< 1.0 :< 0.5625 :< 0.75)
+>>> plait limitHalf -- ...or just one?
+Pair (0.25 :> 0.4375 :> 0.0 :> 0.484375 :> …)
+     (… :< 0.75 :< 0.5625 :< 1.0 :< 0.625)
+```
+
+To implement plaits, we'll be sending some values forwards and some values
+backwards. We can't just use a `State s` or a `Backwards (State s)` applicative
+functor; we need the
+[Tardis](https://hackage.haskell.org/package/tardis/docs/Control-Monad-Tardis.html)
+applicative functor.
+
+```haskell
+newtype Tardis bw fw a = Tardis { runTardis :: (bw,fw) -> (a, (bw,fw)) }
+  deriving Functor
+
+instance Applicative (Tardis bw fw) where
+  pure a = Tardis $ \s -> (a,s)
+  mf <*> ma = Tardis $ \ ~(bwx,fwx) -> 
+    let ~(f, (bwf,fwf)) = runTardis mf (bwa,fwx)
+        ~(a, (bwa,fwa)) = runTardis ma (bwx,fwf)
+    in (f a, (bwf,fwa))
+```
+
+This gives us everything we need to implement twists for traversables:
+
+```haskell
+data Twist a = Twist 
+  { parity  :: Bool
+  , left    :: (a,a)
+  , middle  :: (a,a)
+  , right   :: (a,a)
+  }
+  deriving Functor
+
+choose :: (a,a) -> Twist a
+choose p@(a0,a1) = Twist True p p (a1,a0)
+
+instance Applicative Twist where
+  pure a = Twist False p p p where p = (a,a)
+  ~(Twist x _ _ (f0,f1)) <*> ~(Twist y (a0,a1) _ _) = Twist z bl (b0,b1) br where
+    b0 = f0 a0
+    b1 = f1 a1
+    bm = (b0,b1)
+    bm' = (b1,b0)
+    z = x /= y
+    bl = if x then bm' else bm
+    br = if y then bm' else bm
+```
+
+```haskell
+dup :: a -> (a,a)
+dup a = (a,a)
+
+adjs :: Traversable t => t a -> t (a,a)
+adjs = knot . uncurry . flip . curry . runTardis . traverse (Tardis . swap . dup)
+
+alts :: Traversable t => t (a, a) -> (t a, t a)
+alts = middle . traverse choose
+
+twists :: Traversable t => t a -> (t a, t a)
+twists = alts . adjs
+
+-- |
+-- Swaps adjacent items in a traversable:
+--
+--    >>> twist [0..3]
+--    [1,0,3,2]
+--    >>> twist positives
+--    2 :> 1 :> 4 :> 3 :> …
+--    >>> twist negatives
+--    … :< -3 :< -4 :< -1 :< -2
+--
+-- Serves as its own inverse:
+--
+--    >>> twist . twist $ [0..9]
+--    [0,1,2,3,4,5,6,7,8,9]
+--
+twist :: Traversable t => t a -> t a
+twist = snd . twists
+
+-- |
+-- Swaps adjacent items in a list, skipping the first:
+--
+--    >>> offsetTwist [0..4]
+--    [0,2,1,4,3]
+--
+-- Leaves last element alone if list has even length:
+--
+--    >>> offsetTwist [0..5]
+--    [0,2,1,4,3,5]
+--
+-- Serves as its own inverse:
+--
+--    >>> offsetTwist . offsetTwist $ [0..9]
+--    [0,1,2,3,4,5,6,7,8,9]
+--
+offsetTwist :: Traversable t => t a -> t a
+offsetTwist = fst . twists
+```

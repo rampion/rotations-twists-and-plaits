@@ -34,15 +34,6 @@ library
   if flag(development)
     ghc-options: -Wall -Wextra -Werror
 
-test-suite doctests
-  type: exitcode-stdio-1.0
-  main-is: doctests.hs
-  build-depends: base
-               , doctest >=0.13 && <0.14
-  default-language: Haskell2010
-  if flag(development)
-    ghc-options: -Wall -Wextra -Werror
-
 test-suite doctest-readme
   type: exitcode-stdio-1.0
   main-is: doctest-readme.hs
