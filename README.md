@@ -4,10 +4,12 @@
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
 module README where
-import Control.Monad.State (state, runState)
+import Control.Monad.State (State, state, runState)
 import Control.Applicative.Backwards (Backwards(..))
-import Data.Functor.Product (Product(..))
 import Data.Functor.Classes (Show1(..))
+import Data.Functor.Compose (Compose(..))
+import Data.Functor.Identity (Identity(..))
+import Data.Functor.Product (Product(..))
 ```
 -->
 
@@ -205,9 +207,9 @@ rotation to work on `Traversable`s:
 
 ```haskell
 -- |
--- tie off a state-like computation
-knot :: (s -> (a,s)) -> a
-knot f = a where (a,s) = f s
+-- tie off a State computation
+knotState :: State s a -> a
+knotState ma = a where (a,s) = runState ma s
 
 -- |
 -- swap a value with the current state
@@ -224,7 +226,7 @@ swap a a' = (a', a)
 --     Pair [7,0,1,2] [3,4,5,6]
 --
 rotateRight :: Traversable t => t a -> t a
-rotateRight = knot . runState . traverse (state . swap)
+rotateRight = knotState . traverse (state . swap)
 
 -- |
 -- Move the first item in a traversable to the end, shifting all the other items one
@@ -235,7 +237,7 @@ rotateRight = knot . runState . traverse (state . swap)
 --     >>> rotateLeft (Pair [0..3] [4..7])
 --     Pair [1,2,3,4] [5,6,7,0]
 rotateLeft :: Traversable t => t a -> t a
-rotateLeft = knot . runState . forwards . traverse (Backwards . state . swap)
+rotateLeft = knotState . forwards . traverse (Backwards . state . swap)
 ```
 
 To examine behaviour of cycles in the presence of co-data, it's useful to have
@@ -367,15 +369,25 @@ Pair (1.0 :> 0.0 :> 0.25 :> 0.375 :> …) (… :< 0.53125 :< 0.5625 :< 0.625 :< 
 So can we extend plaits similarly?  It's not hard to come up with an expected
 behaviour for plaits of streams that extend in either or both directions:
 
-```haskell ignore
+<!--
+```haskell
+{- $
+```
+-->
+```haskell
 >>> plait positives
 2 :> 4 :> 1 :> 6 :> …
 >>> plait negatives
 … :< -6 :< -1 :< -4 :< -2
->>> plait integers
+>>> inversePlait integers
 Pair (… :< -6 :< -1 :< -4 :< 1) (-2 :> 3 :> 0 :> 5 :> …)
 
 ```
+<!--
+```haskell
+-}
+```
+-->
 
 However, ambiguity emerges when considering traversables with infinite middles.
 We don't know the **parity** of the second half with respect to the first.
@@ -392,60 +404,77 @@ Pair (0.25 :> 0.4375 :> 0.0 :> 0.484375 :> …)
 
 To implement plaits, we'll be sending some values forwards and some values
 backwards. We can't just use a `State s` or a `Backwards (State s)` applicative
-functor; we need the
+functor, we need both. This has been dubbed the
 [Tardis](https://hackage.haskell.org/package/tardis/docs/Control-Monad-Tardis.html)
 applicative functor.
 
 ```haskell
-newtype Tardis bw fw a = Tardis { runTardis :: (bw,fw) -> (a, (bw,fw)) }
+newtype Tardis bw fw s a = Tardis { runTardis :: Product bw fw s -> (a, Product bw fw s) }
   deriving Functor
 
-instance Applicative (Tardis bw fw) where
-  pure a = Tardis $ \s -> (a,s)
-  mf <*> ma = Tardis $ \ ~(bwx,fwx) -> 
-    let ~(f, (bwf,fwf)) = runTardis mf (bwa,fwx)
-        ~(a, (bwa,fwa)) = runTardis ma (bwx,fwf)
-    in (f a, (bwf,fwa))
+instance Applicative (Tardis bw fw s) where
+  pure a = Tardis $ \p -> (a,p)
+  mf <*> ma = Tardis $ \ ~(Pair bws fws) -> 
+    let ~(f, Pair bwf fwf) = runTardis mf (Pair bwa fws)
+        ~(a, Pair bwa fwa) = runTardis ma (Pair bws fwf)
+    in (f a, Pair bwf fwa)
+
+
+exchange :: Product f g a -> Product g f a
+exchange (Pair fa ga) = (Pair ga fa)
+
+-- |
+-- Tie off a 'Tardis' computation, using the forward state output as the
+-- backwards state input, and vice versa
+knotTardis :: Tardis f f s a -> a
+knotTardis ma = a where ~(a, s) = runTardis ma (exchange s)
+```
+
+We also need a way to keep track of parity, so we can alternate between
+going left and going right
+
+```haskell
+type Pair = Product Identity Identity
+
+fromPair :: Pair a -> (a,a)
+fromPair ~(Pair (Identity a0) (Identity a1)) = (a0,a1)
+
+-- |
+-- Three pointers to the same pair of values
+data Parity a = Parity 
+  { parity  :: Bool    -- ^ whether this contains an "odd" number of tracked values
+  , left    :: Pair a  -- ^ left (mf <*> ma) = left mf <*> bool id exchange (parity mf) (left ma)
+  , middle  :: Pair a  -- ^ middle (mf <*> ma) = right mf <*> left ma
+  , right   :: Pair a  -- ^ right (mf <*> ma) = bool id exchange (parity ma) (right ma) <*> right ma
+  }
+  deriving Functor
+
+count :: Pair a -> Parity a
+count p = Parity True p p p
+
+instance Applicative Parity where
+  pure a = Parity False p p p where p = pure a
+  ~(Parity x _ _ fr) <*> ~(Parity y al _ _) = Parity z bl bm br where
+    -- We could just say
+    --    bm = fr <*> exchange al
+    -- but that's insufficiently lazy
+    bm = case fr of 
+      ~(Pair (Identity f0) (Identity f1)) -> case al of 
+        ~(Pair (Identity a0) (Identity a1)) ->
+            Pair (Identity $ f0 a1) (Identity $ f1 a0)
+    bm' = exchange bm
+    z = x /= y
+    bl = if x then bm else bm'
+    br = if y then bm' else bm
 ```
 
 This gives us everything we need to implement twists for traversables:
 
 ```haskell
-data Twist a = Twist 
-  { parity  :: Bool
-  , left    :: (a,a)
-  , middle  :: (a,a)
-  , right   :: (a,a)
-  }
-  deriving Functor
-
-choose :: (a,a) -> Twist a
-choose p@(a0,a1) = Twist True p p (a1,a0)
-
-instance Applicative Twist where
-  pure a = Twist False p p p where p = (a,a)
-  ~(Twist x _ _ (f0,f1)) <*> ~(Twist y (a0,a1) _ _) = Twist z bl (b0,b1) br where
-    b0 = f0 a0
-    b1 = f1 a1
-    bm = (b0,b1)
-    bm' = (b1,b0)
-    z = x /= y
-    bl = if x then bm' else bm
-    br = if y then bm' else bm
-```
-
-```haskell
-dup :: a -> (a,a)
-dup a = (a,a)
-
-adjs :: Traversable t => t a -> t (a,a)
-adjs = knot . uncurry . flip . curry . runTardis . traverse (Tardis . swap . dup)
-
-alts :: Traversable t => t (a, a) -> (t a, t a)
-alts = middle . traverse choose
-
-twists :: Traversable t => t a -> (t a, t a)
-twists = alts . adjs
+twists :: Traversable t => t a -> Pair (t a)
+-- twists = middle . traverse count . knotTardis . traverse (Tardis . swap . pure)
+twists = middle . knotTardis . getCompose 
+       . traverse (Compose . fmap count . Tardis . swap . pure)
 
 -- |
 -- Swaps adjacent items in a traversable:
@@ -461,26 +490,86 @@ twists = alts . adjs
 --
 --    >>> twist . twist $ [0..9]
 --    [0,1,2,3,4,5,6,7,8,9]
+--    >>> twist . twist $ positives
+--    1 :> 2 :> 3 :> 4 :> …
+--    >>> twist . twist $ negatives
+--    … :< -4 :< -3 :< -2 :< -1
+--    
 --
 twist :: Traversable t => t a -> t a
-twist = snd . twists
+twist = fst . fromPair . twists
 
 -- |
--- Swaps adjacent items in a list, skipping the first:
+-- Swaps adjacent items in a traversable, skipping the first:
 --
 --    >>> offsetTwist [0..4]
 --    [0,2,1,4,3]
---
--- Leaves last element alone if list has even length:
---
---    >>> offsetTwist [0..5]
---    [0,2,1,4,3,5]
+--    >>> offsetTwist positives
+--    1 :> 3 :> 2 :> 5 :> …
+--    >>> offsetTwist negatives
+--    … :< -5 :< -2 :< -3 :< -1
 --
 -- Serves as its own inverse:
 --
 --    >>> offsetTwist . offsetTwist $ [0..9]
 --    [0,1,2,3,4,5,6,7,8,9]
+--    >>> offsetTwist . offsetTwist $ positives
+--    1 :> 2 :> 3 :> 4 :> …
+--    >>> offsetTwist . offsetTwist $ negatives
+--    … :< -4 :< -3 :< -2 :< -1
 --
 offsetTwist :: Traversable t => t a -> t a
-offsetTwist = fst . twists
+offsetTwist = snd . fromPair . twists
+```
+
+And with twists, we can now implement plaits
+
+```haskell
+plait :: Traversable t => t a -> t a
+plait = offsetTwist . twist
+
+inversePlait :: Traversable t => t a -> t a
+inversePlait = twist . offsetTwist
+```
+
+An individual plait takes four traversals. Can we do it in fewer?
+
+We can calculate both plaits in three traversals
+
+```haskell
+-- |
+-- >>> fromPair $ plaits positives
+-- (3 :> 1 :> 5 :> 2 :> …,2 :> 4 :> 1 :> 6 :> …)
+plaits :: Traversable t => t a -> Pair (t a)
+plaits  = middle . traverse count 
+        . knotTardis . traverse (Tardis . swap)
+        . knotTardis . traverse (Tardis . swap . pure)
+```
+
+We can drop another traversal by altering our tardis state to carry two values
+in each direction:
+
+```haskell
+delay :: Product f g a -> Tardis (Product f f) (Product g g) a (Product f g a) 
+delay (Pair f2 g2) = Tardis $ \ ~(Pair (Pair f0 f1) (Pair g0 g1)) -> 
+  (Pair f0 g0, Pair (Pair f1 f2) (Pair g1 g2))
+
+-- |
+-- >>> fromPair $ plaits' positives
+-- (3 :> 1 :> 5 :> 2 :> …,2 :> 4 :> 1 :> 6 :> …)
+plaits' :: Traversable t => t a -> Pair (t a)
+plaits' = middle . traverse count . knotTardis . traverse (delay . pure) where
+```
+
+And one more by composing our two applicatives
+
+```haskell
+-- |
+-- >>> fromPair $ plaits' positives
+-- (3 :> 1 :> 5 :> 2 :> …,2 :> 4 :> 1 :> 6 :> …)
+plaits'' :: Traversable t => t a -> Pair (t a)
+plaits'' = middle . knotTardis . getCompose . traverse (Compose . fmap count . go) where
+  go a = Tardis $ \(~(Pair (Pair b0 b1) (Pair f0 f1))) ->
+    let ia = Identity a in 
+    (Pair b0 f0, Pair (Pair b1 ia) (Pair f1 ia))
 ```
