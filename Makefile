@@ -15,8 +15,9 @@ install-dependencies:
 build:
 	cabal build
 
-test:
-	cabal test doctest-readme --show-details=always
+test: .cabal-sandbox
+	.cabal-sandbox/bin/doctest --preserve-it -pgmL .cabal-sandbox/bin/markdown-unlit README.lhs
+	@#cabal test doctest-readme --show-details=always
 
 doc: README.html
 

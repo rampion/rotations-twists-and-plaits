@@ -1,8 +1,17 @@
+<!-- ROTATIONS, TWISTS AND PLAITS -->
 <!--
+I'm going to hide some chunks of Haskell in HTML comments, if I don't find
+them very pedagogically useful.
+
+Who wants to start an article with a big blob of imports and language statemnts?
+Not me.
+
 ```haskell
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 module README where
 import Control.Monad.State (State, state, runState)
 import Control.Applicative.Backwards (Backwards(..))
@@ -13,10 +22,80 @@ import Data.Functor.Product (Product(..))
 ```
 -->
 
-List cycles
-===========
+<!-- 
+Using trick from https://gist.github.com/kannankumar/4c613cac6d9db896062a16e1cc57d3e5
+to get github to host images
+-->
 
-Swapping adjacent items in a list:
+So the other day I was [doodling
+in](https://www.youtube.com/watch?v=e4MSN6IImpI&list=PLF7CBA45AEBAD18B8) a
+meeting, and I kept drawing little permutation diagrams like:
+
+<img height="122px" src="https://user-images.githubusercontent.com/23003/38763434-8426513a-3f69-11e8-80e1-c106013efd68.png" title="a four-element rotation"/>
+
+A nice thing about rotations is that if you repeat a rotation enough times,
+you cycle back to the original order.
+
+<img height="122px" src="https://user-images.githubusercontent.com/23003/38763435-8433c6bc-3f69-11e8-9005-f64a205f5c3e.png" title="a series of four four-element rotations"/>
+
+As the meeting went on, my diagramming got less elegant as I remembered the
+[id and twist building blocks that graphical linear algebra uses for
+diagrammatic reasoning](https://graphicallinearalgebra.net/2015/05/06/crema-di-mascarpone-rules-of-the-game-part-2-and-diagrammatic-reasoning/)
+
+<img height="71px" src="https://user-images.githubusercontent.com/23003/38763431-8402a884-3f69-11e8-9bcc-1ee87be17ef7.gif" title="id is a straight line, twist is two crossed lines"/>
+
+Looking at this version of rotation diagram, the gap above the first twist popped out.
+
+<img height="122px" src="https://user-images.githubusercontent.com/23003/38763436-84411c36-3f69-11e8-99cf-85544a1bab1e.png" title="id⊕id⊕twist ; id⊕twist⊕id ; twist⊕id⊕id"/>
+
+Doing two twists at once seemed like an obvious variation.
+
+<img height="122px" src="https://user-images.githubusercontent.com/23003/38763432-840e56f2-3f69-11e8-9e72-90c22af69f51.png" title="id⊕id⊕twist ; id⊕twist⊕id ; twist⊕id⊕id"/>
+
+It produced an different permuation than the rotation diagram, but one that shared
+the same property: iterate the process exactly n times on a set of n points, 
+and you got back to your original order:
+
+<img height="122px" src="https://user-images.githubusercontent.com/23003/38763433-8419cbe0-3f69-11e8-895d-da29c5f8182f.png" title="prev diagram repeated four times"/>
+
+Later, I started calling this type of permutation a **plait**.
+
+Both rotations and plaits define a [hamiltonian path](https://en.wikipedia.org/wiki/Hamiltonian_path).
+Each level of the diagram could represent a position in a container, and the diagram
+itself as a way to permute the values of the container.
+
+"That's kind of neat", I thought.
+
+Lists
+=====
+
+List rotations can be implemented fairly directly:
+
+```haskell
+-- |
+-- Move the first item in a list to the end, shifting all the other items one
+-- position forwards
+--
+--     >>> rotateLeftList [0..3]
+--     [1,2,3,0]
+rotateLeftList :: [a] -> [a]
+rotateLeftList []     = []
+rotateLeftList (a:as) = as ++ [a]
+
+-- |
+-- Move the last item in a list to the front, shifting all the other items one
+-- position backwards
+--
+--     >>> rotateRightList [0..3]
+--     [3,0,1,2]
+rotateRightList :: [a] -> [a]
+rotateRightList [] = []
+rotateRightList as = last as : init as
+```
+
+To implement a plait, we'll need a way to swap all the
+adjacent items in the list, like the diagram version does
+with a set of parallel twists.
 
 ```haskell
 -- |
@@ -40,7 +119,8 @@ twistList (a0:a1:as) = a1 : a0 : twistList as
 twistList as = as
 ```
 
-We don't have to start with the first item though:
+The other half of a plait is also twisting all the adjacent pairs, but this
+time at an offset, skipping the first element.
 
 ```haskell
 -- |
@@ -64,8 +144,8 @@ offsetTwistList (a:as) = a :  twistList as
 offsetTwistList []     = []
 ```
 
-Though each is its own inverse, we can compose them to get a `k`-cycle generator
-for any list of length `k`.
+Composing the twist and the offset twist gives us the
+plait.
 
 ```haskell
 
@@ -98,9 +178,6 @@ plaitList :: [a] -> [a]
 plaitList = offsetTwistList . twistList
 
 ```
-
-Let's call this type of cycle generator a plait (to avoid collisions with braid
-theory).
 
 Choosing to do the offset twist second is a purely arbitrary choice, so there's
 the inverse plait, which does the offset twist first:
@@ -142,39 +219,13 @@ inversePlaitList :: [a] -> [a]
 inversePlaitList = twistList . offsetTwistList
 ```
 
-Other cycle generators for lists are left and right rotation, where every item
-shifts one position in the same direction, except for the item that would be shifted
-off, which is moved all the way to the other end of the list:
-
-```haskell
--- |
--- Move the first item in a list to the end, shifting all the other items one
--- position forwards
---
---     >>> rotateLeftList [0..3]
---     [1,2,3,0]
-rotateLeftList :: [a] -> [a]
-rotateLeftList []     = []
-rotateLeftList (a:as) = as ++ [a]
-
--- |
--- Move the last item in a list to the front, shifting all the other items one
--- position backwards
---
---     >>> rotateRightList [0..3]
---     [3,0,1,2]
-rotateRightList :: [a] -> [a]
-rotateRightList [] = []
-rotateRightList as = last as : init as
-```
-
 A nice property of a plait (or inverse plait) is that individual elements don't
 move more than two spots from their original position, so evaluating a portion
 of a plaited list only looks ahead a constant amount.
 
 This makes that plaits safe for use on infinite lists - requesting a finite
-amount of a plaited infinite list only requires a finite amount of work.  The
-same is true for left rotations of lists, but not right rotations.
+amount of a plaited infinite list only requires a finite amount of work.
+inf
 
 <!--
 ```haskell
@@ -186,6 +237,11 @@ same is true for left rotations of lists, but not right rotations.
 [1,3,0,5,2,7,4,9,6,11]
 >>> take 10 $ inversePlaitList [0..]
 [2,0,4,1,6,3,8,5,10,7]
+
+```
+
+An infinite list can be safely left-rotated.
+```
 >>> take 10 $ rotateLeftList [0..]
 [1,2,3,4,5,6,7,8,9,10]
 
@@ -195,52 +251,21 @@ same is true for left rotations of lists, but not right rotations.
 -}
 ```
 -->
+
+But right-rotations will blow up when you try to evaluate the first element.
+
 ```haskell ignore
 >>> take 10 $ rotateRightList [0..]
 <stack overflow>
 ```
-Cycles of Traversables
-======================
 
-Using `State` as an applicative functor, we can generalize left and right
-rotation to work on `Traversable`s:
+Traversables
+============
 
-```haskell
--- |
--- tie off a State computation
-knotState :: State s a -> a
-knotState ma = a where (a,s) = runState ma s
+Now that we've got lists as a proof-of-concept, let's implement rotations and
+plaits for general traversables.
 
--- |
--- swap a value with the current state
-swap :: a -> a -> (a, a)
-swap a a' = (a', a)
-
--- |
--- Move the last item in a traversable to the front, shifting all the other items one
--- position backwards
---
---     >>> rotateRight [0..3]
---     [3,0,1,2]
---     >>> rotateRight (Pair [0..3] [4..7])
---     Pair [7,0,1,2] [3,4,5,6]
---
-rotateRight :: Traversable t => t a -> t a
-rotateRight = knotState . traverse (state . swap)
-
--- |
--- Move the first item in a traversable to the end, shifting all the other items one
--- position forwards
---
---     >>> rotateLeft [0..3]
---     [1,2,3,0]
---     >>> rotateLeft (Pair [0..3] [4..7])
---     Pair [1,2,3,4] [5,6,7,0]
-rotateLeft :: Traversable t => t a -> t a
-rotateLeft = knotState . forwards . traverse (Backwards . state . swap)
-```
-
-To examine behaviour of cycles in the presence of co-data, it's useful to have
+To examine behaviour of these permutations in the presence of codata, it's useful to have
 traversable types for streams that extend infinitely to the right or left.
 
 ```haskell
@@ -299,7 +324,45 @@ instance Show a => Show (SnocStream a) where
 ```
 -->
 
-We can rotate left-infinite streams to the right, and right-infinite streams to the left:
+Using the `State` applicative functor, we can implement left and right
+rotation on `Traversable`s:
+
+```haskell
+-- |
+-- tie off a State computation
+knotState :: State s a -> a
+knotState ma = a where (a,s) = runState ma s
+
+-- |
+-- swap a value with the current state
+swapState :: a -> State a a
+swapState a = state $ \a' -> (a', a)
+
+-- |
+-- Move the last item in a traversable to the front, shifting all the other
+-- items one position backwards
+--
+--     >>> rotateRight [0..3]
+--     [3,0,1,2]
+--     >>> rotateRight (Pair [0..3] [4..7])
+--     Pair [7,0,1,2] [3,4,5,6]
+--
+rotateRight :: Traversable t => t a -> t a
+rotateRight = knotState . traverse swapState
+
+-- |
+-- Move the first item in a traversable to the end, shifting all the other
+-- items one position forwards
+--
+--     >>> rotateLeft [0..3]
+--     [1,2,3,0]
+--     >>> rotateLeft (Pair [0..3] [4..7])
+--     Pair [1,2,3,4] [5,6,7,0]
+rotateLeft :: Traversable t => t a -> t a
+rotateLeft = knotState . forwards . traverse (Backwards . swapState)
+```
+
+We can rotate left-infinite traversables to the right, and right-infinite traversables to the left:
 
 <!--
 ```haskell
@@ -323,7 +386,7 @@ We can rotate left-infinite streams to the right, and right-infinite streams to 
 ```
 -->
 
-Rotating left-infinite streams to the left or right-infinite streams to the
+Rotating left-infinite traversables to the left or right-infinite traversables to the
 right blows up, predictably:
 
 ```haskell ignore
@@ -333,7 +396,7 @@ right blows up, predictably:
 <stack overflow>
 ```
 
-Streams that extend infinitely in both directions or that have an infinite middle 
+Traversables that extend infinitely in both directions or that have an infinite middle 
 can be rotated either way.
 
 <!--
@@ -348,10 +411,6 @@ Pair (… :< -4 :< -3 :< -2 :< -1) (0 :> 1 :> 2 :> 3 :> …)
 Pair (… :< -3 :< -2 :< -1 :< 0) (1 :> 2 :> 3 :> 4 :> …)
 >>> rotateRight integers
 Pair (… :< -5 :< -4 :< -3 :< -2) (-1 :> 0 :> 1 :> 2 :> …)
-
-```
-
-```haskell
 >>> limitHalf
 Pair (0.0 :> 0.25 :> 0.375 :> 0.4375 :> …) (… :< 0.5625 :< 0.625 :< 0.75 :< 1.0)
 >>> rotateLeft limitHalf
@@ -366,8 +425,36 @@ Pair (1.0 :> 0.0 :> 0.25 :> 0.375 :> …) (… :< 0.53125 :< 0.5625 :< 0.625 :< 
 ```
 -->
 
-So can we extend plaits similarly?  It's not hard to come up with an expected
-behaviour for plaits of streams that extend in either or both directions:
+To implement plaits, we'll be sending some values forwards and some values
+backwards. We can't just use a `State s` or a `Backwards (State s)` applicative
+functor, we need both. The combined applicative functor is known as a
+[Tardis](https://hackage.haskell.org/package/tardis/docs/Control-Monad-Tardis.html).
+
+```haskell
+newtype Tardis bw fw a = Tardis { runTardis :: (bw,fw) -> (a, (bw,fw)) }
+  deriving Functor
+
+instance Applicative (Tardis bw fw) where
+  pure a = Tardis $ \p -> (a,p)
+  mf <*> ma = Tardis $ \ ~(bws, fws) -> 
+    let ~(f, (bwf, fwf)) = runTardis mf (bwa, fws)
+        ~(a, (bwa, fwa)) = runTardis ma (bws, fwf)
+    in (f a, (bwf, fwa))
+
+-- |
+-- Tie off a 'Tardis' computation, using the forward state output as the
+-- backwards state input, and vice versa
+knotTardis :: Tardis s s a -> a
+knotTardis ma = a where ~(a, (bw,fw)) = runTardis ma (fw,bw)
+
+-- |
+-- Swap a value with both the forward and backward state
+swapTardis :: a -> Tardis a a (a,a)
+swapTardis a = Tardis $ \p' -> (p', p) where p = (a,a)
+```
+
+Now we can send one copy of a value to the next position and another to the
+previous position:
 
 <!--
 ```haskell
@@ -375,12 +462,11 @@ behaviour for plaits of streams that extend in either or both directions:
 ```
 -->
 ```haskell
->>> plait positives
-2 :> 4 :> 1 :> 6 :> …
->>> plait negatives
-… :< -6 :< -1 :< -4 :< -2
->>> inversePlait integers
-Pair (… :< -6 :< -1 :< -4 :< 1) (-2 :> 3 :> 0 :> 5 :> …)
+>>> let spread = knotTardis . traverse swapTardis
+>>> spread [0..7]
+[(1,0),(2,0),(3,1),(4,2),(5,3),(6,4),(7,5),(7,6)]
+>>> spread $ Pair [0..3] [4..7]
+Pair [(1,0),(2,0),(3,1),(4,2)] [(5,3),(6,4),(7,5),(7,6)]
 
 ```
 <!--
@@ -389,92 +475,147 @@ Pair (… :< -6 :< -1 :< -4 :< 1) (-2 :> 3 :> 0 :> 5 :> …)
 ```
 -->
 
-However, ambiguity emerges when considering traversables with infinite middles.
-We don't know the **parity** of the second half with respect to the first.
+Comparing one of the prior examples with what we know of twisting lists,
+a pattern emerges:
 
 ```haskell ignore
--- if 0.0 moves two positions right, should 1.0 move left two positions...
->>> plait limitHalf
-Pair (0.25 :> 0.4375 :> 0.0 :> 0.484375 :> …)
-     (… :< 0.515625 :< 1.0 :< 0.5625 :< 0.75)
->>> plait limitHalf -- ...or just one?
-Pair (0.25 :> 0.4375 :> 0.0 :> 0.484375 :> …)
-     (… :< 0.75 :< 0.5625 :< 1.0 :< 0.625)
+[(1,0),(2,0),(3,1),(4,2),(5,3),(6,4),(7,5),(7,6)] -- spread [0..7]
+[ 1   ,   0 , 3   ,   2 , 5   ,   4 , 7   ,   6 ] -- twistList [0..7]
+[   0 , 2   ,   1 , 4   ,   3 , 6   ,   5 , 7   ] -- offsetTwistList [0..7]
 ```
 
-To implement plaits, we'll be sending some values forwards and some values
-backwards. We can't just use a `State s` or a `Backwards (State s)` applicative
-functor, we need both. This has been dubbed the
-[Tardis](https://hackage.haskell.org/package/tardis/docs/Control-Monad-Tardis.html)
-applicative functor.
+`spread` calculates both twists simultaneously, we just need to tease them apart
+by flipping every other pair and unzipping.
+
+Flipping every pair is easy with a functor, flipping *every other* pair
+is a little tricky.  What's needed is a way to keep track of parity -
+flip the items with odd parity, don't flip the ones with even parity.
+
+But where do count your parity from? If you count from the left using `State`,
+you won't be process left-infinite codata. If you count from the right using `Reverse . State`,
+you'll have the same problem with right-infinite codata.
+
+The solution I came up with is to count parity locally, changing it as you
+`<*>` terms together, and to only start counting from the left or right
+when needed.
+
 
 ```haskell
-newtype Tardis bw fw s a = Tardis { runTardis :: Product bw fw s -> (a, Product bw fw s) }
-  deriving Functor
-
-instance Applicative (Tardis bw fw s) where
-  pure a = Tardis $ \p -> (a,p)
-  mf <*> ma = Tardis $ \ ~(Pair bws fws) -> 
-    let ~(f, Pair bwf fwf) = runTardis mf (Pair bwa fws)
-        ~(a, Pair bwa fwa) = runTardis ma (Pair bws fwf)
-    in (f a, Pair bwf fwa)
-
-
-exchange :: Product f g a -> Product g f a
-exchange (Pair fa ga) = (Pair ga fa)
-
--- |
--- Tie off a 'Tardis' computation, using the forward state output as the
--- backwards state input, and vice versa
-knotTardis :: Tardis f f s a -> a
-knotTardis ma = a where ~(a, s) = runTardis ma (exchange s)
-```
-
-We also need a way to keep track of parity, so we can alternate between
-going left and going right
-
-```haskell
-type Pair = Product Identity Identity
-
-fromPair :: Pair a -> (a,a)
-fromPair ~(Pair (Identity a0) (Identity a1)) = (a0,a1)
-
--- |
--- Three pointers to the same pair of values
-data Parity a = Parity 
-  { parity  :: Bool    -- ^ whether this contains an "odd" number of tracked values
-  , left    :: Pair a  -- ^ left (mf <*> ma) = left mf <*> bool id exchange (parity mf) (left ma)
-  , middle  :: Pair a  -- ^ middle (mf <*> ma) = right mf <*> left ma
-  , right   :: Pair a  -- ^ right (mf <*> ma) = bool id exchange (parity ma) (right ma) <*> right ma
+data AlternatingUnzip a = AlternatingUnzip 
+  { parity  :: Bool    -- ^ whether this contains an "odd" number of counted values
+  -- Three pointers to the same pair of values, representing an alternately
+  -- unzipped computation, possibly in different orders depending on the
+  -- parity of the parts they were constructed from.
+  , left    :: Both a
+  , middle  :: Both a
+  , right   :: Both a
   }
   deriving Functor
 
-count :: Pair a -> Parity a
-count p = Parity True p p p
+count :: (a,a) -> AlternatingUnzip a
+count (uncurry Both -> p) = AlternatingUnzip True p p p
 
-instance Applicative Parity where
-  pure a = Parity False p p p where p = pure a
-  ~(Parity x _ _ fr) <*> ~(Parity y al _ _) = Parity z bl bm br where
-    -- We could just say
-    --    bm = fr <*> exchange al
-    -- but that's insufficiently lazy
-    bm = case fr of 
-      ~(Pair (Identity f0) (Identity f1)) -> case al of 
-        ~(Pair (Identity a0) (Identity a1)) ->
-            Pair (Identity $ f0 a1) (Identity $ f1 a0)
-    bm' = exchange bm
-    z = x /= y
-    bl = if x then bm else bm'
-    br = if y then bm' else bm
+instance Applicative AlternatingUnzip where
+  pure a = AlternatingUnzip False p p p where p = pure a
+  -- being lazy on both sides of '<*>' lets us be agnostic
+  -- about which direction (if any) is finitely computable
+  ~(AlternatingUnzip x _ _ (Both f0 f1)) <*> ~(AlternatingUnzip y (Both a0 a1) _ _) 
+      = AlternatingUnzip z bl bm br
+    where
+      -- We can't use
+      --
+      --    bm = Both f0 f1 <*> exchange (Both a0 a1)
+      --
+      -- b/c Both's applicative instance is insufficiently lazy
+      bm = Both (f0 a1) (f1 a0)
+      bm' = exchange bm
+      z = x /= y
+      bl = if x then bm else bm'
+      br = if y then bm' else bm
+
+-- | Applicative functor containing two items of the same type
+type Both = Product Identity Identity
+
+pattern Both :: a -> a -> Both a
+pattern Both a0 a1 = Pair (Identity a0) (Identity a1)
+
+getBoth :: Both a -> (a,a)
+getBoth ~(Both a0 a1) = (a0,a1)
+
+exchange :: Product f g a -> Product g f a
+exchange ~(Pair fa ga) = (Pair ga fa)
 ```
 
-This gives us everything we need to implement twists for traversables:
+Now we can calculate both the twist and the offset twist
+simultaneously:
 
 ```haskell
-twists :: Traversable t => t a -> Pair (t a)
--- twists = middle . traverse count . knotTardis . traverse (Tardis . swap . pure)
-twists = middle . knotTardis . getCompose 
-       . traverse (Compose . fmap count . Tardis . swap . pure)
+twists0 :: Traversable t => t a -> (t a, t a)
+twists0 = getBoth . left . traverse count . knotTardis . traverse swapTardis
+```
+
+<!--
+```haskell
+{- $
+```
+-->
+```haskell
+>>> twists0 [0..7]
+([1,0,3,2,5,4,7,6],[0,2,1,4,3,6,5,7])
+>>> twists0 $ Pair [0..3] [4..7]
+(Pair [1,0,3,2] [5,4,7,6],Pair [0,2,1,4] [3,6,5,7])
+
+```
+<!--
+```haskell
+-}
+```
+-->
+
+This approach works, but requires two traversals through the data. We can compute
+the same value in a single traversal by composing the functors, rather than the functions:
+
+```haskell
+twists1 :: Traversable t => t a -> (t a, t a)
+twists1 = getBoth . left . knotTardis . getCompose
+        . traverse (Compose . fmap count . swapTardis)
+```
+
+<!--
+```haskell
+{- $
+```
+-->
+```haskell
+>>> twists1 [0..7]
+([1,0,3,2,5,4,7,6],[0,2,1,4,3,6,5,7])
+>>> twists1 $ Pair [0..3] [4..7]
+(Pair [1,0,3,2] [5,4,7,6],Pair [0,2,1,4] [3,6,5,7])
+
+```
+<!--
+```haskell
+-}
+```
+-->
+
+But our choice to use the `left` view of the unzipping means we can't
+use it on values that extend infinitely to the left:
+
+```haskell ignore
+>>> negatives
+… :< -4 :< -3 :< -2 :< -1
+>>> twists1 negatives
+<stack overflow>
+```
+
+This is where the `middle` view of the `AlternatingUnzip` comes in handy.
+If any view is finitely computable, then the middle view is.
+
+```haskell
+twists :: Traversable t => t a -> (t a, t a)
+twists = getBoth . middle . knotTardis . getCompose
+       . traverse (Compose . fmap count . swapTardis)
 
 -- |
 -- Swaps adjacent items in a traversable:
@@ -497,7 +638,7 @@ twists = middle . knotTardis . getCompose
 --    
 --
 twist :: Traversable t => t a -> t a
-twist = fst . fromPair . twists
+twist = fst . twists
 
 -- |
 -- Swaps adjacent items in a traversable, skipping the first:
@@ -519,12 +660,12 @@ twist = fst . fromPair . twists
 --    … :< -4 :< -3 :< -2 :< -1
 --
 offsetTwist :: Traversable t => t a -> t a
-offsetTwist = snd . fromPair . twists
+offsetTwist = snd  . twists
 ```
 
-And with twists, we can now implement plaits
+We could use these twists to implement the plaits as we did for lists:
 
-```haskell
+```haskell ignore
 plait :: Traversable t => t a -> t a
 plait = offsetTwist . twist
 
@@ -532,44 +673,137 @@ inversePlait :: Traversable t => t a -> t a
 inversePlait = twist . offsetTwist
 ```
 
-An individual plait takes four traversals. Can we do it in fewer?
-
-We can calculate both plaits in three traversals
-
-```haskell
--- |
--- >>> fromPair $ plaits positives
--- (3 :> 1 :> 5 :> 2 :> …,2 :> 4 :> 1 :> 6 :> …)
-plaits :: Traversable t => t a -> Pair (t a)
-plaits  = middle . traverse count 
-        . knotTardis . traverse (Tardis . swap)
-        . knotTardis . traverse (Tardis . swap . pure)
-```
-
-We can drop another traversal by altering our tardis state to carry two values
-in each direction:
+But this definition would make calculating each plait take two
+traversals, and calculating both take four. Just as we calculated
+both twists with a single traversal, so to can we calculate both plaits
+with a single traversal.  The trick is to use a 2 item queue for the
+tardis state:
 
 ```haskell
-delay :: Product f g a -> Tardis (Product f f) (Product g g) a (Product f g a) 
-delay (Pair f2 g2) = Tardis $ \ ~(Pair (Pair f0 f1) (Pair g0 g1)) -> 
-  (Pair f0 g0, Pair (Pair f1 f2) (Pair g1 g2))
-
--- |
--- >>> fromPair $ plaits' positives
--- (3 :> 1 :> 5 :> 2 :> …,2 :> 4 :> 1 :> 6 :> …)
-plaits' :: Traversable t => t a -> Pair (t a)
-plaits' = middle . traverse count . knotTardis . traverse (delay . pure) where
+delayedSwapTardis :: a -> Tardis (a,a) (a,a) (a,a)
+delayedSwapTardis a = Tardis $ \ ~((bw0,bw1),(fw0,fw1)) -> 
+  ((bw0,fw0), ((bw1,a),(fw1,a)))
 ```
 
-And one more by composing our two applicatives
+Now we can copy a value to positions two moves away in a single pass:
+
+<!--
+```haskell
+{- $
+```
+-->
+```haskell
+>>> let spread2 = knotTardis . traverse delayedSwapTardis
+>>> spread2 [0..7]
+[(2,1),(3,0),(4,0),(5,1),(6,2),(7,3),(7,4),(6,5)]
+
+```
+<!--
+```haskell
+-}
+```
+-->
+
+And all we need to do to make the plaits is compose with
+alternating unzipping.
 
 ```haskell
+plaits :: Traversable t => t a -> (t a, t a)
+plaits = getBoth . middle . knotTardis . getCompose
+       . traverse (Compose . fmap count . delayedSwapTardis)
+
 -- |
--- >>> fromPair $ plaits' positives
--- (3 :> 1 :> 5 :> 2 :> …,2 :> 4 :> 1 :> 6 :> …)
-plaits'' :: Traversable t => t a -> Pair (t a)
-plaits'' = middle . knotTardis . getCompose . traverse (Compose . fmap count . go) where
-  go a = Tardis $ \(~(Pair (Pair b0 b1) (Pair f0 f1))) ->
-    let ia = Identity a in 
-    (Pair b0 f0, Pair (Pair b1 ia) (Pair f1 ia))
+-- Permutes the contents of a traversable:
+--
+--     >>> plait (Pair [0..3] [4,5])
+--     Pair [1,3,0,5] [2,4]
+--     >>> plait positives
+--     3 :> 1 :> 5 :> 2 :> …
+--     >>> plait negatives
+--     … :< -2 :< -5 :< -1 :< -3
+--
+-- Repeating this permutation k times will yield the original order for a traversable
+-- containing k items:
+--
+--     >>> mapM_ print . take 7 . iterate plait $ Pair [0..3] [4,5]
+--     Pair [0,1,2,3] [4,5]
+--     Pair [1,3,0,5] [2,4]
+--     Pair [3,5,1,4] [0,2]
+--     Pair [5,4,3,2] [1,0]
+--     Pair [4,2,5,0] [3,1]
+--     Pair [2,0,4,1] [5,3]
+--     Pair [0,1,2,3] [4,5]
+--
+plait :: Traversable t => t a -> t a
+plait = fst . plaits
+
+-- |
+-- Permutes the contents of a traversable
+--
+--     >>> inversePlait (Pair [0,1] [2..5])
+--     Pair [2,0] [4,1,5,3]
+--     >>> inversePlait positives
+--     2 :> 4 :> 1 :> 6 :> …
+--     >>> inversePlait negatives
+--     … :< -6 :< -1 :< -4 :< -2
+--
+-- Repeating this permutation k times will yield the original order for a traversable
+-- containing k items:
+--
+--     >>> mapM_ print . take 7 . iterate inversePlait $ Pair [0,1] [2..5]
+--     Pair [0,1] [2,3,4,5]
+--     Pair [2,0] [4,1,5,3]
+--     Pair [4,2] [5,0,3,1]
+--     Pair [5,4] [3,2,1,0]
+--     Pair [3,5] [1,4,0,2]
+--     Pair [1,3] [0,5,2,4]
+--     Pair [0,1] [2,3,4,5]
+--
+inversePlait :: Traversable t => t a -> t a
+inversePlait = snd . plaits
 ```
+
+In addition to the example above, plaits perform well on traversables that
+extend out infinitely in two directions:
+
+<!--
+```haskell
+{- $
+```
+-->
+```haskell
+>>> integers
+Pair (… :< -4 :< -3 :< -2 :< -1) (0 :> 1 :> 2 :> 3 :> …)
+>>> plait integers
+Pair (… :< -6 :< -1 :< -4 :< 1) (-2 :> 3 :> 0 :> 5 :> …)
+>>> inversePlait integers
+Pair (… :< -2 :< -5 :< 0 :< -3) (2 :> -1 :> 4 :> 1 :> …)
+
+```
+<!--
+```haskell
+-}
+```
+-->
+
+However, ambiguity emerges when considering traversables with infinite middles.
+We can't compute the **parity** of the second half with respect to the first, 
+so the computation freezes.
+
+```haskell ignore
+>>> limitHalf
+Pair (0.0 :> 0.25 :> 0.375 :> 0.4375 :> …) (… :< 0.5625 :< 0.625 :< 0.75 :< 1.0)
+>>> plait limitHalf
+<stack overflow>
+>>> inversePlait limitHalf
+<stack overflow>
+```
+
+Future work
+===========
+
+[Sorting network](https://en.wikipedia.org/wiki/Sorting_network)
+[Applicative sort](https://gist.github.com/treeowl/9621f58d55fe0c4f9162be0e074b1b29)
+
+Literate Haskell
+================
