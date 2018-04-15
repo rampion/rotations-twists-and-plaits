@@ -1,5 +1,4 @@
-default:
-	cabal build Braid
+default: build test
 
 all: .cabal-sandbox install-dependencies configure build test
 
@@ -13,11 +12,15 @@ install-dependencies:
 	cabal install --enable-tests --dependencies-only
 
 build:
-	cabal build
+	cabal build rotations-twists-and-plaits
 
-test: .cabal-sandbox
+test: test-fast
+
+test-fast: .cabal-sandbox
 	.cabal-sandbox/bin/doctest --preserve-it -pgmL .cabal-sandbox/bin/markdown-unlit README.lhs
-	@#cabal test doctest-readme --show-details=always
+
+test-slow:
+	cabal test doctest-readme --show-details=always
 
 doc: README.html
 
