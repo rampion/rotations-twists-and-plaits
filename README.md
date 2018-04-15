@@ -29,7 +29,7 @@ to get github to host images
 
 So the other day I was [doodling
 in](https://www.youtube.com/watch?v=e4MSN6IImpI&list=PLF7CBA45AEBAD18B8) a
-meeting, and I kept drawing little permutation diagrams like:
+meeting, and I kept drawing little permutation diagrams:
 
 <img height="122px" src="https://user-images.githubusercontent.com/23003/38763434-8426513a-3f69-11e8-80e1-c106013efd68.png" title="a four-element rotation"/>
 
@@ -225,7 +225,6 @@ of a plaited list only looks ahead a constant amount.
 
 This makes that plaits safe for use on infinite lists - requesting a finite
 amount of a plaited infinite list only requires a finite amount of work.
-inf
 
 <!--
 ```haskell
@@ -241,7 +240,8 @@ inf
 ```
 
 An infinite list can be safely left-rotated.
-```
+
+```haskell
 >>> take 10 $ rotateLeftList [0..]
 [1,2,3,4,5,6,7,8,9,10]
 
@@ -397,7 +397,7 @@ right blows up, predictably:
 ```
 
 Traversables that extend infinitely in both directions or that have an infinite middle 
-can be rotated either way.
+can be safely rotated in either direction.
 
 <!--
 ```haskell
@@ -524,9 +524,10 @@ instance Applicative AlternatingUnzip where
     where
       -- We can't use
       --
-      --    bm = Both f0 f1 <*> exchange (Both a0 a1)
+      --    bm = right mf <*> exchange (left ma)
       --
-      -- b/c Both's applicative instance is insufficiently lazy
+      -- b/c Both's applicative instance is insufficiently lazy, so we do
+      -- the lazy pattern matching by hand instead
       bm = Both (f0 a1) (f1 a0)
       bm' = exchange bm
       z = x /= y
@@ -599,8 +600,8 @@ twists1 = getBoth . left . knotTardis . getCompose
 ```
 -->
 
-But our choice to use the `left` view of the unzipping means we can't
-use it on values that extend infinitely to the left:
+Our choice to use the `left` view of the unzipping means we can't use it on
+values that extend infinitely to the left:
 
 ```haskell ignore
 >>> negatives
@@ -673,11 +674,10 @@ inversePlait :: Traversable t => t a -> t a
 inversePlait = twist . offsetTwist
 ```
 
-But this definition would make calculating each plait take two
-traversals, and calculating both take four. Just as we calculated
-both twists with a single traversal, so to can we calculate both plaits
-with a single traversal.  The trick is to use a 2 item queue for the
-tardis state:
+But this definition would make calculating each plait take two traversals, and
+calculating both take four. Just as we calculated both twists with a single
+traversal, so too can we calculate both plaits with a single traversal.  The
+trick is to use a two item queue for the tardis state:
 
 ```haskell
 delayedSwapTardis :: a -> Tardis (a,a) (a,a) (a,a)
@@ -787,8 +787,8 @@ Pair (… :< -2 :< -5 :< 0 :< -3) (2 :> -1 :> 4 :> 1 :> …)
 -->
 
 However, ambiguity emerges when considering traversables with infinite middles.
-We can't compute the **parity** of the second half with respect to the first, 
-so the computation freezes.
+We can't compute the parity of the second half with respect to the first, 
+so the computation explodes.
 
 ```haskell ignore
 >>> limitHalf
@@ -799,11 +799,34 @@ Pair (0.0 :> 0.25 :> 0.375 :> 0.4375 :> …) (… :< 0.5625 :< 0.625 :< 0.75 :< 
 <stack overflow>
 ```
 
-Future work
-===========
+So while you can plait some traversables that you can't rotate, the converse is true too.
 
-[Sorting network](https://en.wikipedia.org/wiki/Sorting_network)
-[Applicative sort](https://gist.github.com/treeowl/9621f58d55fe0c4f9162be0e074b1b29)
+Related topics
+==============
+
+While putting this post together it finally clicked in my head what my initial
+diagrams reminded me of - [sorting networks](https://en.wikipedia.org/wiki/Sorting_network).
+While [others have implemented sort-via-traverse](https://gist.github.com/treeowl/9621f58d55fe0c4f9162be0e074b1b29),
+it be interested to see if the above techniques could be extended to implement a sorting network applicative.
 
 Literate Haskell
 ================
+
+This markdown file is literate haskell. 
+
+If saved or symlinked as `README.lhs`, all the definitions can be compiled
+by using the [`markdown-unlit`](https://hackage.haskell.org/package/markdown-unlit)
+preprocessor:
+
+```bash
+$ ghc -pgmL markdown-unlit README.lhs
+[1 of 1] Compiling README           ( README.lhs, README.o )
+```
+
+All the examples (except the ones that result in `<stack overflow>`) can be
+checked via [`doctest`](https://hackage.haskell.org/package/doctest):
+
+```bash
+$ doctest -pgmL markdown-unlit README.lhs
+Examples: 67  Tried: 67  Errors: 0  Failures: 0
+```
