@@ -10,15 +10,14 @@ Not me.
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 module README where
 import Control.Monad.State (State, state, runState)
 import Control.Applicative.Backwards (Backwards(..))
 import Data.Functor.Classes (Show1(..))
 import Data.Functor.Compose (Compose(..))
-import Data.Functor.Identity (Identity(..))
 import Data.Functor.Product (Product(..))
+import Data.Tuple (swap)
 ```
 -->
 
@@ -29,7 +28,7 @@ to get github to host images
 
 So the other day I was [doodling
 in](https://www.youtube.com/watch?v=e4MSN6IImpI&list=PLF7CBA45AEBAD18B8) a
-meeting, and I kept drawing little permutation diagrams:
+meeting, and I kept drawing little permutation diagrams, like this one of rotation:
 
 <img height="122px" src="https://user-images.githubusercontent.com/23003/38763434-8426513a-3f69-11e8-80e1-c106013efd68.png" title="a four-element rotation"/>
 
@@ -427,7 +426,8 @@ Pair (1.0 :> 0.0 :> 0.25 :> 0.375 :> …) (… :< 0.53125 :< 0.5625 :< 0.625 :< 
 
 To implement plaits, we'll be sending some values forwards and some values
 backwards. We can't just use a `State s` or a `Backwards (State s)` applicative
-functor, we need both. The combined applicative functor is known as a
+functor, we need both. The applicative functor that sends state forwards
+and backwards is called a
 [Tardis](https://hackage.haskell.org/package/tardis/docs/Control-Monad-Tardis.html).
 
 ```haskell
@@ -506,45 +506,27 @@ data AlternatingUnzip a = AlternatingUnzip
   -- Three pointers to the same pair of values, representing an alternately
   -- unzipped computation, possibly in different orders depending on the
   -- parity of the parts they were constructed from.
-  , left    :: Both a
-  , middle  :: Both a
-  , right   :: Both a
+  , left    :: (a,a)
+  , middle  :: (a,a)
+  , right   :: (a,a)
   }
   deriving Functor
 
 count :: (a,a) -> AlternatingUnzip a
-count (uncurry Both -> p) = AlternatingUnzip True p p p
+count p = AlternatingUnzip True p p p
 
 instance Applicative AlternatingUnzip where
-  pure a = AlternatingUnzip False p p p where p = pure a
+  pure a = AlternatingUnzip False p p p where p = (a,a)
   -- being lazy on both sides of '<*>' lets us be agnostic
   -- about which direction (if any) is finitely computable
-  ~(AlternatingUnzip x _ _ (Both f0 f1)) <*> ~(AlternatingUnzip y (Both a0 a1) _ _) 
+  ~(AlternatingUnzip x _ _ (f0,f1)) <*> ~(AlternatingUnzip y (a0,a1) _ _) 
       = AlternatingUnzip z bl bm br
     where
-      -- We can't use
-      --
-      --    bm = right mf <*> exchange (left ma)
-      --
-      -- b/c Both's applicative instance is insufficiently lazy, so we do
-      -- the lazy pattern matching by hand instead
-      bm = Both (f0 a1) (f1 a0)
-      bm' = exchange bm
+      bm = (f0 a1, f1 a0)
+      bm' = swap bm
       z = x /= y
       bl = if x then bm else bm'
       br = if y then bm' else bm
-
--- | Applicative functor containing two items of the same type
-type Both = Product Identity Identity
-
-pattern Both :: a -> a -> Both a
-pattern Both a0 a1 = Pair (Identity a0) (Identity a1)
-
-getBoth :: Both a -> (a,a)
-getBoth ~(Both a0 a1) = (a0,a1)
-
-exchange :: Product f g a -> Product g f a
-exchange ~(Pair fa ga) = (Pair ga fa)
 ```
 
 Now we can calculate both the twist and the offset twist
@@ -552,7 +534,7 @@ simultaneously:
 
 ```haskell
 twists0 :: Traversable t => t a -> (t a, t a)
-twists0 = getBoth . left . traverse count . knotTardis . traverse swapTardis
+twists0 = left . traverse count . knotTardis . traverse swapTardis
 ```
 
 <!--
@@ -578,7 +560,7 @@ the same value in a single traversal by composing the functors, rather than the 
 
 ```haskell
 twists1 :: Traversable t => t a -> (t a, t a)
-twists1 = getBoth . left . knotTardis . getCompose
+twists1 = left . knotTardis . getCompose
         . traverse (Compose . fmap count . swapTardis)
 ```
 
@@ -615,7 +597,7 @@ If any view is finitely computable, then the middle view is.
 
 ```haskell
 twists :: Traversable t => t a -> (t a, t a)
-twists = getBoth . middle . knotTardis . getCompose
+twists = middle . knotTardis . getCompose
        . traverse (Compose . fmap count . swapTardis)
 
 -- |
@@ -709,7 +691,7 @@ alternating unzipping.
 
 ```haskell
 plaits :: Traversable t => t a -> (t a, t a)
-plaits = getBoth . middle . knotTardis . getCompose
+plaits = middle . knotTardis . getCompose
        . traverse (Compose . fmap count . delayedSwapTardis)
 
 -- |
