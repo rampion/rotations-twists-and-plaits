@@ -28,7 +28,7 @@ to get github to host images
 
 So the other day I was [doodling
 in](https://www.youtube.com/watch?v=e4MSN6IImpI&list=PLF7CBA45AEBAD18B8) a
-meeting, and I kept drawing little permutation diagrams, like this one of rotation:
+meeting, and I kept drawing little permutation diagrams, like this one of a rotation:
 
 <img height="122px" src="https://user-images.githubusercontent.com/23003/38763434-8426513a-3f69-11e8-80e1-c106013efd68.png" title="a four-element rotation"/>
 
