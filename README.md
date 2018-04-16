@@ -10,6 +10,7 @@ Not me.
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 module README where
 import Control.Monad.State (State, state, runState)
@@ -502,31 +503,35 @@ when needed.
 
 ```haskell
 data AlternatingUnzip a = AlternatingUnzip 
-  { parity  :: Bool    -- ^ whether this contains an "odd" number of counted values
-  -- Three pointers to the same pair of values, representing an alternately
-  -- unzipped computation, possibly in different orders depending on the
-  -- parity of the parts they were constructed from.
-  , left    :: (a,a)
-  , middle  :: (a,a)
-  , right   :: (a,a)
+  { leftParity  :: Bool
+  , rightParity :: Bool
+  , middle      :: (a,a)
   }
   deriving Functor
 
-count :: (a,a) -> AlternatingUnzip a
-count p = AlternatingUnzip True p p p
+parity :: AlternatingUnzip a -> Bool
+parity AlternatingUnzip{..} = leftParity /= rightParity
 
+left :: AlternatingUnzip a -> (a,a)
+left AlternatingUnzip{..} = (if leftParity then id else swap) middle
+
+right :: AlternatingUnzip a -> (a,a)
+right AlternatingUnzip{..} = (if rightParity then swap else id) middle
+
+-- breaks the identity, interchange, and composition laws for Applicatives
 instance Applicative AlternatingUnzip where
-  pure a = AlternatingUnzip False p p p where p = (a,a)
-  -- being lazy on both sides of '<*>' lets us be agnostic
-  -- about which direction (if any) is finitely computable
-  ~(AlternatingUnzip x _ _ (f0,f1)) <*> ~(AlternatingUnzip y (a0,a1) _ _) 
-      = AlternatingUnzip z bl bm br
-    where
-      bm = (f0 a1, f1 a0)
-      bm' = swap bm
-      z = x /= y
-      bl = if x then bm else bm'
-      br = if y then bm' else bm
+  pure a = AlternatingUnzip False False (a,a)
+  mf <*> ma = AlternatingUnzip
+    { leftParity = parity mf
+    , rightParity = parity ma
+    , middle = let ~(f0,f1) = right mf
+                   ~(a0,a1) = left ma
+               in (f0 a1, f1 a0)
+    }
+
+count :: (a,a) -> AlternatingUnzip a
+count = AlternatingUnzip True False
+
 ```
 
 Now we can calculate both the twist and the offset twist
